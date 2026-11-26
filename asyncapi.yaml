@@ -1,0 +1,146 @@
+asyncapi: 3.0.0
+info:
+  title: Account Storage Events API
+  version: 1.0.0
+  description: Асинхронный контракт публикации событий подсистемы хранения банковских счетов в Apache Kafka.
+
+servers:
+  kafkaProd:
+    host: kafka.bank.example.com:9092
+    protocol: kafka
+    description: Основной брокер сообщений Apache Kafka
+
+channels:
+  accountCreatedChannel:
+    address: bank.accounts.created.v1
+    description: Топик публикации полных событий о создании новых банковских счетов
+    messages:
+      accountCreatedMessage:
+        $ref: '#/components/messages/AccountCreatedMessage'
+
+  accountBlocksUpdatedChannel:
+    address: bank.accounts.updated.blocks.v1
+    description: Топик публикации составных событий об изменении отдельных блоков данных счёта
+    messages:
+      accountCompositeMessage:
+        $ref: '#/components/messages/AccountCompositeMessage'
+
+operations:
+  publishAccountCreated:
+    action: send
+    channel:
+      $ref: '#/channels/accountCreatedChannel'
+    summary: Отправка события о создании нового счёта
+    description: Подсистема публикует полную карточку счёта сразу после успешного выполнения POST /accounts.
+
+  publishAccountBlocksUpdated:
+    action: send
+    channel:
+      $ref: '#/channels/accountBlocksUpdatedChannel'
+    summary: Отправка составного события из типизированных блоков
+    description: Подсистема публикует массив изменённых блоков данных по банковскому счёту.
+
+components:
+  messages:
+    AccountCreatedMessage:
+      name: AccountCreatedMessage
+      title: Событие создания банковского счёта
+      contentType: application/json
+      payload:
+        $ref: './openapi.yaml#/components/schemas/Account'
+
+    AccountCompositeMessage:
+      name: AccountCompositeMessage
+      title: Составное событие по банковскому счёту
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AccountCompositeEvent'
+
+  schemas:
+    AccountCompositeEvent:
+      type: object
+      description: Составное сообщение, содержащее метаданные и массив типизированных блоков
+      required:
+        - messageId
+        - timestamp
+        - blocks
+      properties:
+        messageId:
+          type: string
+          format: uuid
+          description: Уникальный идентификатор сообщения для обеспечения идемпотентности
+          example: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+        timestamp:
+          type: string
+          format: date-time
+          description: Время формирования события
+          example: '2026-11-26T08:15:00Z'
+        blocks:
+          type: array
+          minItems: 1
+          description: Массив типизированных блоков данных счёта
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/IdentificationBlock'
+              - $ref: '#/components/schemas/ClassificationBlock'
+              - $ref: '#/components/schemas/FinancialStateBlock'
+
+    IdentificationBlock:
+      type: object
+      description: Блок идентификационных реквизитов счёта
+      required:
+        - blockType
+        - blockVersion
+        - data
+      properties:
+        blockType:
+          type: string
+          enum:
+            - IDENTIFICATION
+          description: Тип блока данных
+        blockVersion:
+          type: string
+          description: Версия схемы блока
+          example: '1.0'
+        data:
+          $ref: './openapi.yaml#/components/schemas/AccountIdentification'
+
+    ClassificationBlock:
+      type: object
+      description: Блок продуктовых и статусных параметров счёта
+      required:
+        - blockType
+        - blockVersion
+        - data
+      properties:
+        blockType:
+          type: string
+          enum:
+            - CLASSIFICATION
+          description: Тип блока данных
+        blockVersion:
+          type: string
+          description: Версия схемы блока
+          example: '1.0'
+        data:
+          $ref: './openapi.yaml#/components/schemas/AccountClassification'
+
+    FinancialStateBlock:
+      type: object
+      description: Блок финансового состояния и активности счёта
+      required:
+        - blockType
+        - blockVersion
+        - data
+      properties:
+        blockType:
+          type: string
+          enum:
+            - FINANCIAL_STATE
+          description: Тип блока данных
+        blockVersion:
+          type: string
+          description: Версия схемы блока
+          example: '1.0'
+        data:
+          $ref: './openapi.yaml#/components/schemas/AccountFinancialState'
