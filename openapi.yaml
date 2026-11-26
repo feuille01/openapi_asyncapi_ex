@@ -1,0 +1,253 @@
+openapi: 3.0.3
+info:
+  title: Account Storage Subsystem API
+  version: 1.0.0
+  description: Синхронный REST API подсистемы хранения и управления банковскими счетами.
+servers:
+  - url: https://api.bank.example.com/v1
+    description: Продуктовый стенд подсистемы счетов
+
+paths:
+  /accounts:
+    get:
+      summary: Получение списка банковских счетов
+      description: Возвращает постраничный список счетов с возможностью фильтрации по статусу.
+      operationId: getAccounts
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Фильтр по статусу счёта
+          schema:
+            type: string
+            enum:
+              - ACTIVE
+              - FROZEN
+              - BLOCKED
+              - CLOSED
+        - name: limit
+          in: query
+          required: false
+          description: Количество записей на одной странице
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          description: Смещение от начала списка записей
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Список счетов успешно получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountListResponse'
+        '400':
+          description: Некорректные параметры фильтрации или пагинации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Создание нового банковского счёта
+      description: Регистрирует новый банковский счёт в системе хранения.
+      operationId: createAccount
+      requestBody:
+        required: true
+        description: Данные для открытия нового банковского счёта
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Account'
+      responses:
+        '201':
+          description: Банковский счёт успешно создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          description: Ошибка входных данных (например, неверный формат номера счёта)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Счёт с таким номером (accountNumber) уже существует в базе
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /accounts/{accountNumber}:
+    get:
+      summary: Получение счёта по уникальному номеру
+      description: Возвращает полную карточку банковского счёта по его 20-значному номеру.
+      operationId: getAccountByNumber
+      parameters:
+        - name: accountNumber
+          in: path
+          required: true
+          description: Уникальный 20-значный номер банковского счёта
+          schema:
+            type: string
+            pattern: '^(2200|5500|1100)[0-9]{16}$'
+            example: '22008100000000123456'
+      responses:
+        '200':
+          description: Счёт успешно найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404':
+          description: Счёт с указанным номером не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    AccountIdentification:
+      type: object
+      description: Идентификационные реквизиты банковского счёта
+      required:
+        - accountNumber
+        - ownerId
+      properties:
+        accountNumber:
+          type: string
+          description: Уникальный 20-значный номер счёта (2200 - текущий, 5500 - накопительный, 1100 - кредитный)
+          pattern: '^(2200|5500|1100)[0-9]{16}$'
+          example: '22008100000000123456'
+        ownerId:
+          type: string
+          format: uuid
+          description: Уникальный идентификатор клиента-владельца счёта
+          example: '550e8400-e29b-41d4-a716-446655440000'
+
+    AccountClassification:
+      type: object
+      description: Продуктовые и статусные параметры счёта
+      required:
+        - accountType
+        - currency
+        - status
+        - openedAt
+      properties:
+        accountType:
+          type: string
+          description: Тип банковского счёта
+          enum:
+            - SAVINGS
+            - CREDIT
+            - DEPOSIT
+          example: DEPOSIT
+        currency:
+          type: string
+          description: Валюта счёта
+          enum:
+            - RUB
+            - USD
+            - EUR
+            - CNY
+          example: RUB
+        status:
+          type: string
+          description: Текущий операционный статус счёта
+          enum:
+            - ACTIVE
+            - FROZEN
+            - BLOCKED
+            - CLOSED
+          example: ACTIVE
+        openedAt:
+          type: string
+          format: date-time
+          description: Дата и время открытия счёта
+          example: '2026-11-25T10:15:30Z'
+
+    AccountFinancialState:
+      type: object
+      description: Финансовое состояние и активность по счёту
+      required:
+        - balance
+      properties:
+        balance:
+          type: string
+          description: Текущий остаток средств на счёте (строка с двумя знаками после точки)
+          pattern: '^-?[0-9]+\.[0-9]{2}$'
+          example: '15420.50'
+        lastTransactionAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Дата и время последней транзакции (null, если операций ещё не было)
+          example: '2026-11-25T16:40:00Z'
+
+    Account:
+      type: object
+      description: Полная модель банковского счёта
+      required:
+        - identification
+        - classification
+        - financialState
+      properties:
+        identification:
+          $ref: '#/components/schemas/AccountIdentification'
+        classification:
+          $ref: '#/components/schemas/AccountClassification'
+        financialState:
+          $ref: '#/components/schemas/AccountFinancialState'
+
+    AccountListResponse:
+      type: object
+      description: Постраничный список банковских счетов
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          description: Массив счетов на текущей странице
+          items:
+            $ref: '#/components/schemas/Account'
+        total:
+          type: integer
+          description: Общее количество счетов, подходящих под фильтр
+          example: 342
+        limit:
+          type: integer
+          description: Максимальное количество записей в ответе
+          example: 100
+        offset:
+          type: integer
+          description: Смещение от начала списка
+          example: 0
+
+    Error:
+      type: object
+      description: Стандартный формат ответа при ошибке
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Код ошибки
+          example: ACCOUNT_NOT_FOUND
+        message:
+          type: string
+          description: Описание ошибки
+          example: Счёт с указанным номером не найден
